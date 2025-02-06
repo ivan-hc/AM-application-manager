@@ -1,0 +1,73 @@
+#!/bin/sh
+
+APP=vivaldi-snapshot
+SITE="https://vivaldi.com"
+
+# CREATE THE FOLDER
+mkdir /opt/$APP
+cd /opt/$APP
+
+# ADD THE REMOVER
+echo '#!/bin/sh' >> /opt/$APP/remove
+echo "rm -R -f /usr/local/share/applications/$APP-AM.desktop /opt/$APP /usr/local/bin/$APP" >> /opt/$APP/remove
+chmod a+x /opt/$APP/remove
+
+# DOWNLOAD THE ARCHIVE
+mkdir tmp
+cd ./tmp
+
+version=$(echo "https://repo.vivaldi.com/snapshot/deb/pool/main/$(curl -Ls https://repo.vivaldi.com/snapshot/deb/pool/main/ | grep $APP | grep arm64 | tail -1 | grep -o -P '(?<=href=").*(?=">vivaldi)')")
+wget $version
+echo "$version" >> /opt/$APP/version
+ar x ./*deb
+tar fx ./data.tar.xz
+cd ..
+mv ./tmp/opt/*/* ./
+mv ./tmp/etc .
+cp ./tmp/usr/share/applications/* ./$APP.desktop
+mv ./tmp/usr .
+rm -R -f ./tmp
+
+# LINK
+ln -s /opt/$APP/vivaldi /usr/local/bin/$APP
+
+# SCRIPT TO UPDATE THE PROGRAM
+cat >> /opt/$APP/AM-updater << 'EOF'
+#!/usr/bin/env bash
+APP=vivaldi-snapshot
+version0=$(cat /opt/$APP/version)
+version=$(echo "https://repo.vivaldi.com/snapshot/deb/pool/main/$(curl -Ls https://repo.vivaldi.com/snapshot/deb/pool/main/ | grep $APP | grep arm64 | tail -1 | grep -o -P '(?<=href=").*(?=">vivaldi)')")
+if [ $version = $version0 ]; then
+  echo "Update not needed!"
+else
+  notify-send "A new version of $APP is available, please wait"
+  mkdir /opt/$APP/tmp
+  cd /opt/$APP/tmp
+  wget $version
+  ar x ./*deb
+  tar fx ./data.tar.xz
+  cd ..
+  rm ./version
+  echo $version >> ./version
+  mv --backup=t ./tmp/opt/*/* ./
+  mv --backup=t ./tmp/etc .
+  mv --backup=t ./tmp/usr .
+  chmod a+x /opt/$APP/$APP
+  rm -R -f ./tmp ./*~
+  notify-send "$APP is updated!"
+fi
+EOF
+chmod a+x /opt/$APP/AM-updater
+
+# ENABLE CODEC HTML5
+sed -i '/^  DOWNLOAD/s/ -T[0-9]\+//' ./update-ffmpeg 2> /dev/null
+./update-ffmpeg 2> /dev/null
+
+# LAUNCHER
+sed -i "s#Exec=/usr/bin/#Exec=#g" $APP.desktop
+sed -i "s#Icon=vivaldi-snapshot#Icon=/opt/$APP/icons/$APP#g" $APP.desktop
+mv ./$APP.desktop /usr/local/share/applications/$APP-AM.desktop 2> /dev/null
+
+# ICON
+mkdir icons
+cp ./*256.png ./icons/$APP
